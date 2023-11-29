@@ -1,0 +1,26 @@
+version: "3.8"
+services:
+  mysql:
+    image: mysql:8.0.33
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    ports:
+      - 3306:3306
+    volumes:
+      - ./mysql:/var/lib/mysql
+  app:
+    profiles:
+      - prod
+    depends_on:
+     - mysql
+    build: .
+    environment:
+      DB_SERVICE_NAME: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./files:/files
+      - ./:/app
