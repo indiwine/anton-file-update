@@ -7,10 +7,15 @@ const {authenticate} = require('@google-cloud/local-auth');
 
 // Set folder name to search images under
 const FOLDER_TO_SEARCH_UNDER = 'ExpressDetal Prod';
-const NOT_FOUND_IMAGE_FILE = 'not-found.txt';
+const NOT_FOUND_IMAGE_FILE = 'not-found.log';
+const RENAME_LOG_FILE = 'rename.log';
+const DRY_RUN = true;
 
 
 async function main() {
+  console.log('Starting...')
+  console.log('DRY_RUN', DRY_RUN);
+  // Connect to mysql database
   const connection = await mysql.createConnection({
     host: process.env.DB_SERVICE_NAME, user: process.env.DB_USER, database: process.env.DB_NAME, password: process.env.DB_PASSWORD,
   });
@@ -197,7 +202,13 @@ async function main() {
           supportsAllDrives: true,
           includeItemsFromAllDrives: true,
         };
-        await drive.files.update(imageParams);
+        console.log(`Renaming image "${image.name}" to "${newImageName}".`);
+        // Write to log file
+        await fs.appendFile(RENAME_LOG_FILE, `${image.name} -> ${newImageName}\n`);
+        console.log('Rename file', `${image.name} -> ${newImageName}`);
+        if (!DRY_RUN) {
+          await drive.files.update(imageParams);
+        }
       }
     }
   }
