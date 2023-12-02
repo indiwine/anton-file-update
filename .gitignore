@@ -2,3 +2,4 @@ mysql/
 files/
 .env
 credentials.json
+token.json
