@@ -211,4 +211,4 @@ async function main() {
 
 }
 
-main().then(() => console.log('Done.')).catch(console.error);
+main().then(() => console.log('Done.')).catch(console.error).finally(() => process.exit());
