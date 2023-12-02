@@ -7,9 +7,14 @@ const {authenticate} = require('@google-cloud/local-auth');
 
 // Set folder name to search images under
 const FOLDER_TO_SEARCH_UNDER = 'ExpressDetal Prod';
+const NOT_FOUND_IMAGE_FILE = 'not-found.txt';
 
 
 async function main() {
+  const connection = await mysql.createConnection({
+    host: process.env.DB_SERVICE_NAME, user: process.env.DB_USER, database: process.env.DB_NAME, password: process.env.DB_PASSWORD,
+  });
+
   console.log('CWD', process.cwd());
 
   // Setup constants
@@ -20,6 +25,10 @@ async function main() {
   // time.
   const TOKEN_PATH = path.join(process.cwd(), 'token.json');
   const CREDENTIALS_PATH = path.join(process.cwd(), 'credentials.json');
+  const NOT_FOUND_IMAGE_PATH = path.join(process.cwd(), NOT_FOUND_IMAGE_FILE);
+
+  // Open txt file for writing
+  const notFoundImageFile = await fs.open(NOT_FOUND_IMAGE_PATH, 'w+');
 
   /**
    * Reads previously authorized credentials from the save file.
@@ -149,14 +158,47 @@ async function main() {
     }
   }
 
+  // Find image by name in mysql oc_product table and rename it with sku or write to file if not found
+  async function findImageInDb(imageName) {
+    const imageQuery = `SELECT sku
+                        FROM oc_product
+                        WHERE image_path = '${imageName}'`;
+    const [rows, fields] = await connection.execute(imageQuery);
+    if (rows.length) {
+      const sku = rows[0].sku;
+      console.log(`Image "${imageName}" found with sku ${sku}.`);
+      return sku;
+    } else {
+      console.log(`Image "${imageName}" not found.`);
+      await notFoundImageFile.appendFile(`${imageName}\n`);
+      return null;
+    }
+  }
+
+
   // A recursive function to search for images and folders
   async function search(folderId) {
     for await (const folder of searchFolders(folderId)) {
       console.log(`Found folder: ${folder.name} with id ${folder.id}`);
       await search(folder.id);
     }
+
     for await (const image of searchImages(folderId)) {
       console.log(`Found image: ${image.name} with id ${image.id}`);
+      const sku = await findImageInDb(image.name);
+      if (sku) {
+        const newImageName = `${sku}.${path.extname(image.name)}`;
+        const imageMetadata = {
+          name: newImageName,
+        };
+        const imageParams = {
+          fileId: image.id,
+          resource: imageMetadata,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+        };
+        await drive.files.update(imageParams);
+      }
     }
   }
 
@@ -164,11 +206,8 @@ async function main() {
   const folderId = await findFolder(FOLDER_TO_SEARCH_UNDER);
   await search(folderId);
 
-
-  // const connection = await mysql.createConnection({
-  //   host: process.env.DB_SERVICE_NAME, user: process.env.DB_USER, database: process.env.DB_NAME, password: process.env.DB_PASSWORD,
-  // });
-
+  // Close txt file
+  await notFoundImageFile.close();
 
 }
 
