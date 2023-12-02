@@ -7,8 +7,11 @@ const {authenticate} = require('@google-cloud/local-auth');
 
 // Set folder name to search images under
 const FOLDER_TO_SEARCH_UNDER = 'ExpressDetal Prod';
+// File to save images not found in mysql
 const NOT_FOUND_IMAGE_FILE = 'not-found.log';
+// File to save renamed images
 const RENAME_LOG_FILE = 'rename.log';
+// Set to true to not rename images
 const DRY_RUN = true;
 
 
