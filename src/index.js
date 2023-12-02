@@ -95,28 +95,18 @@ async function main() {
   const authClient = await authorize();
   const drive = google.drive({version: 'v3', auth: authClient});
 
-  async function findFolder(folderName) {
-    const folderQuery = `mimeType="application/vnd.google-apps.folder" and name="${folderName}"`;
-    const folderParams = {
-      pageSize: 1,
-      fields: 'nextPageToken, files(id, name)',
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-      q: folderQuery,
-    };
-    const folderRes = await drive.files.list(folderParams);
-    const folderFiles = folderRes.data.files;
-    if (!folderFiles.length) {
-      throw new Error(`Folder "${folderName}" not found.`);
-    }
-    const folderId = folderFiles[0].id;
-    console.log(`Folder "${folderName}" found with id ${folderId}.`);
-    return folderId;
-  }
+   
+  
+    
+    
+    
+  
 
-  // Generator function to recursively search for folders
+
+
+  // Generator function to recursively search for folders NEW
   async function* searchFolders(folderId) {
-    const folderQuery = `mimeType="application/vnd.google-apps.folder" and '${folderId}' in parents`;
+    const folderQuery = `mimeType="application/vnd.google-apps.folder" and '${folderId}' in parents and name="${folderName}" `;
     const folderParams = {
       pageSize: 10,
       fields: 'nextPageToken, files(id, name)',
@@ -124,8 +114,15 @@ async function main() {
       includeItemsFromAllDrives: true,
       q: folderQuery,
     };
+
+
+    const folderParamsFindName = {...folderParams, pageSize : 1};
+
     let folderRes = await drive.files.list(folderParams);
     let folderFiles = folderRes.data.files;
+
+
+    // 
     while (folderFiles.length) {
       for (const folderFile of folderFiles) {
         yield folderFile;
@@ -138,8 +135,17 @@ async function main() {
         folderFiles = [];
       }
     }
+    
+    if (!folderFiles.length) {
+      throw new Error(`Folder "${folderName}" not found.`);
+    }
+    const folderId = folderFiles[0].id;
+    console.log(`Folder "${folderName}" found with id ${folderId}.`);
+    return folderId;
+
   }
 
+  
   // Generator function to recursively search for images
   async function* searchImages(folderId) {
     const imageQuery = `mimeType contains 'image/' and '${folderId}' in parents`;
@@ -182,6 +188,7 @@ async function main() {
       return null;
     }
   }
+
 
 
   // A recursive function to search for images and folders
