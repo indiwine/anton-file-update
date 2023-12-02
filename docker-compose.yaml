@@ -23,4 +23,4 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
     volumes:
       - ./files:/files
-      - ./:/app
+      - ./:/src
