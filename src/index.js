@@ -4,6 +4,7 @@ const path = require('path');
 const process = require('process');
 const {google} = require('googleapis');
 const {authenticate} = require('@google-cloud/local-auth');
+require('dotenv').config();
 
 // Set folder name to search images under
 const FOLDER_TO_SEARCH_UNDER = 'ExpressDetal Prod';
@@ -12,12 +13,13 @@ const NOT_FOUND_IMAGE_FILE = 'not-found.log';
 // File to save renamed images
 const RENAME_LOG_FILE = 'rename.log';
 // Set to true to not rename images
-const DRY_RUN = true;
+const DRY_RUN = false;
 
 
 async function main() {
   console.log('Starting...')
   console.log('DRY_RUN', DRY_RUN);
+  console.log('connection', process.env.DB_SERVICE_NAME, process.env.DB_USER, process.env.DB_NAME, process.env.DB_PASSWORD);
   // Connect to mysql database
   const connection = await mysql.createConnection({
     host: process.env.DB_SERVICE_NAME, user: process.env.DB_USER, database: process.env.DB_NAME, password: process.env.DB_PASSWORD,
@@ -95,28 +97,27 @@ async function main() {
   const authClient = await authorize();
   const drive = google.drive({version: 'v3', auth: authClient});
 
-  async function findFolder(folderName) {
-    const folderQuery = `mimeType="application/vnd.google-apps.folder" and name="${folderName}"`;
-    const folderParams = {
-      pageSize: 1,
-      fields: 'nextPageToken, files(id, name)',
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-      q: folderQuery,
-    };
-    const folderRes = await drive.files.list(folderParams);
-    const folderFiles = folderRes.data.files;
-    if (!folderFiles.length) {
-      throw new Error(`Folder "${folderName}" not found.`);
-    }
-    const folderId = folderFiles[0].id;
-    console.log(`Folder "${folderName}" found with id ${folderId}.`);
-    return folderId;
-  }
 
-  // Generator function to recursively search for folders
-  async function* searchFolders(folderId) {
-    const folderQuery = `mimeType="application/vnd.google-apps.folder" and '${folderId}' in parents`;
+  async function* searchFolders(folderId = null, folderName = null) {
+    if (!folderId && !folderName) {
+      throw new Error('Either folderId or folderName must be provided.');
+    }
+
+    if (folderId && folderName) {
+      throw new Error('Either folderId or folderName must be provided, not both.');
+    }
+
+    let folderQuery = `mimeType="application/vnd.google-apps.folder" and `;
+
+    if (folderId) {
+      folderQuery += `'${folderId}' in parents`;
+    }
+
+    if (folderName) {
+      folderQuery += `name='${folderName}'`;
+    }
+
+
     const folderParams = {
       pageSize: 10,
       fields: 'nextPageToken, files(id, name)',
@@ -124,12 +125,16 @@ async function main() {
       includeItemsFromAllDrives: true,
       q: folderQuery,
     };
+
     let folderRes = await drive.files.list(folderParams);
     let folderFiles = folderRes.data.files;
+
+
     while (folderFiles.length) {
       for (const folderFile of folderFiles) {
         yield folderFile;
       }
+
       if (folderRes.data.nextPageToken) {
         folderParams.pageToken = folderRes.data.nextPageToken;
         folderRes = await drive.files.list(folderParams);
@@ -137,6 +142,7 @@ async function main() {
       } else {
         folderFiles = [];
       }
+
     }
   }
 
@@ -183,7 +189,7 @@ async function main() {
     }
   }
 
-
+  let renamedImages = 0;
   // A recursive function to search for images and folders
   async function search(folderId) {
     for await (const folder of searchFolders(folderId)) {
@@ -195,7 +201,7 @@ async function main() {
       console.log(`Found image: ${image.name} with id ${image.id}`);
       const sku = await findImageInDb(image.name);
       if (sku) {
-        const newImageName = `${sku}.${path.extname(image.name)}`;
+        const newImageName = `${sku}${path.extname(image.name)}`;
         const imageMetadata = {
           name: newImageName,
         };
@@ -212,13 +218,19 @@ async function main() {
         if (!DRY_RUN) {
           await drive.files.update(imageParams);
         }
+        renamedImages++;
       }
     }
   }
 
+  setInterval(() => {
+    console.log('Renamed images', renamedImages);
+  }, 10000);
+
   // Find folder to search under
-  const folderId = await findFolder(FOLDER_TO_SEARCH_UNDER);
-  await search(folderId);
+  const folderGenerator = await searchFolders(null, FOLDER_TO_SEARCH_UNDER);
+  const folder = await folderGenerator.next();
+  await search(folder.value.id);
 
   // Close txt file
   await notFoundImageFile.close();
