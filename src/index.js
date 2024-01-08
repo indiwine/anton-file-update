@@ -97,6 +97,31 @@ async function main() {
   const authClient = await authorize();
   const drive = google.drive({version: 'v3', auth: authClient});
 
+  /**
+   * Executes a function with retries.
+   *
+   * @template T
+   * @param {() => Promise<T>} func - The function to execute.
+   * @param {number} [retries=5] - The number of times to retry the function.
+   * @param {number} [baseDelay=30000] - The base delay between retries in milliseconds.
+   * @returns {Promise<T>} - The result of the function execution.
+   * @throws {Error} - Throws an error if the retry limit is reached.
+   */
+  async function doWithRetry(func, retries = 5, baseDelay = 30000) {
+    let delay = baseDelay;
+    for (let retryCount = 0; retryCount < retries; retryCount++) {
+      try {
+        return await func();
+      } catch (err) {
+        console.error(err);
+        console.log(`Retrying in ${delay / 1000} seconds...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay = baseDelay * Math.pow(2, retryCount);
+      }
+    }
+    throw new Error('Retry limit reached.');
+
+  }
 
   async function* searchFolders(folderId = null, folderName = null) {
     if (!folderId && !folderName) {
@@ -211,12 +236,12 @@ async function main() {
           supportsAllDrives: true,
           includeItemsFromAllDrives: true,
         };
-        console.log(`Renaming image "${image.name}" to "${newImageName}".`);
+        // console.log(`Renaming image "${image.name}" to "${newImageName}".`);
         // Write to log file
         await fs.appendFile(RENAME_LOG_FILE, `${image.name} -> ${newImageName}\n`);
-        console.log('Rename file', `${image.name} -> ${newImageName}`);
+        // console.log('Rename file', `${image.name} -> ${newImageName}`);
         if (!DRY_RUN) {
-          await drive.files.update(imageParams);
+          await doWithRetry(() => drive.files.update(imageParams));
         }
         renamedImages++;
       }
