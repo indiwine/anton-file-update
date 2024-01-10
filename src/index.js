@@ -14,6 +14,8 @@ const NOT_FOUND_IMAGE_FILE = 'not-found.log';
 const RENAME_LOG_FILE = 'rename.log';
 // Set to true to not rename images
 const DRY_RUN = false;
+// Set to true to log operations to console
+const LOG_OPERATIONS = false;
 
 
 async function main() {
@@ -39,6 +41,9 @@ async function main() {
 
   // Open txt file for writing
   const notFoundImageFile = await fs.open(NOT_FOUND_IMAGE_PATH, 'w+');
+
+  // Total number of retries triggered by the library.
+  let numOfRetriesTriggered = 0;
 
   /**
    * Reads previously authorized credentials from the save file.
@@ -113,6 +118,7 @@ async function main() {
       try {
         return await func();
       } catch (err) {
+        numOfRetriesTriggered++;
         console.error(err);
         console.log(`Retrying in ${delay / 1000} seconds...`);
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -205,16 +211,24 @@ async function main() {
     const [rows, fields] = await connection.execute(imageQuery);
     if (rows.length) {
       const sku = rows[0].sku;
-      console.log(`Image "${imageName}" found with sku ${sku}.`);
+
+      if (LOG_OPERATIONS) {
+        console.log(`Image "${imageName}" found with sku ${sku}.`);
+      }
+
       return sku;
     } else {
-      console.log(`Image "${imageName}" not found.`);
+      if (LOG_OPERATIONS) {
+        console.log(`Image "${imageName}" not found.`);
+      }
       await notFoundImageFile.appendFile(`${imageName}\n`);
       return null;
     }
   }
 
+  let totalImages = 0;
   let renamedImages = 0;
+  let notFoundImages = 0;
   // A recursive function to search for images and folders
   async function search(folderId) {
     for await (const folder of searchFolders(folderId)) {
@@ -223,8 +237,14 @@ async function main() {
     }
 
     for await (const image of searchImages(folderId)) {
-      console.log(`Found image: ${image.name} with id ${image.id}`);
+      if (LOG_OPERATIONS) console.log(`Found image: ${image.name} with id ${image.id}`);
+
+      totalImages++;
       const sku = await findImageInDb(image.name);
+      if (!sku) {
+        notFoundImages++;
+      }
+
       if (sku) {
         const newImageName = `${sku}${path.extname(image.name)}`;
         const imageMetadata = {
@@ -236,20 +256,21 @@ async function main() {
           supportsAllDrives: true,
           includeItemsFromAllDrives: true,
         };
-        // console.log(`Renaming image "${image.name}" to "${newImageName}".`);
+        if (LOG_OPERATIONS) console.log(`Renaming image "${image.name}" to "${newImageName}".`);
+
         // Write to log file
         await fs.appendFile(RENAME_LOG_FILE, `${image.name} -> ${newImageName}\n`);
-        // console.log('Rename file', `${image.name} -> ${newImageName}`);
         if (!DRY_RUN) {
           await doWithRetry(() => drive.files.update(imageParams));
+          renamedImages++;
         }
-        renamedImages++;
+
       }
     }
   }
 
   setInterval(() => {
-    console.log('Renamed images', renamedImages);
+    console.log('Renamed images', renamedImages, 'Not found images', notFoundImages, 'Total images', totalImages, 'Retries triggered', numOfRetriesTriggered);
   }, 10000);
 
   // Find folder to search under
